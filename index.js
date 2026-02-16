@@ -135,13 +135,23 @@ app.post('/api/create-checkout', async (req, res) => {
 app.post('/api/webhook', async (req, res) => {
   const { query, body } = req;
 
+  console.log('🔔 Webhook recebido do Mercado Pago!');
+  console.log('  Query:', JSON.stringify(query));
+  console.log('  Body:', JSON.stringify(body));
+
   // O Mercado Pago envia o ID no query (data.id) ou no body dependendo da versão do webhook
   // Geralmente topic=payment ou type=payment
   const topic = query.topic || query.type;
   const id = query.id || query['data.id'] || body?.data?.id;
 
+  console.log('  Topic:', topic);
+  console.log('  Payment ID:', id);
+
   if (topic === 'payment' && id) {
+    console.log('  ✅ Processando pagamento:', id);
     processarPagamentoMP(id);
+  } else {
+    console.log('  ⚠️  Webhook ignorado (não é payment ou sem ID)');
   }
 
   // Responder rápido para o MP não ficar tentando de novo
