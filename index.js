@@ -139,22 +139,37 @@ app.post('/api/webhook', async (req, res) => {
   console.log('  Query:', JSON.stringify(query));
   console.log('  Body:', JSON.stringify(body));
 
-  // O Mercado Pago envia o ID no query (data.id) ou no body dependendo da versão do webhook
-  // Geralmente topic=payment ou type=payment
+  // Formato antigo (v0): topic/type no query
   const topic = query.topic || query.type;
-  const id = query.id || query['data.id'] || body?.data?.id;
+  let paymentId = query.id || query['data.id'];
+
+  // Formato novo (v1): action no body
+  const action = body?.action;
+  if (!paymentId && body?.data?.id) {
+    paymentId = body.data.id;
+  }
 
   console.log('  Topic:', topic);
-  console.log('  Payment ID:', id);
+  console.log('  Action:', action);
+  console.log('  Payment ID:', paymentId);
 
-  if (topic === 'payment' && id) {
-    console.log('  ✅ Processando pagamento:', id);
-    processarPagamentoMP(id);
+  // Aceita tanto "payment" (antigo) quanto "payment.updated" (novo)
+  const isPaymentEvent =
+    topic === 'payment' ||
+    action === 'payment.created' ||
+    action === 'payment.updated';
+
+  if (isPaymentEvent && paymentId) {
+    console.log('  ✅ Processando pagamento:', paymentId);
+    // Não aguarda - processa em background para responder rápido ao MP
+    processarPagamentoMP(paymentId).catch(err => {
+      console.error('  ❌ Erro ao processar pagamento:', err.message);
+    });
   } else {
     console.log('  ⚠️  Webhook ignorado (não é payment ou sem ID)');
   }
 
-  // Responder rápido para o MP não ficar tentando de novo
+  // Responder IMEDIATAMENTE para o MP não ficar tentando de novo
   res.status(200).send('OK');
 });
 
