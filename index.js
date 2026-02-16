@@ -12,8 +12,8 @@ const port = process.env.PORT || 3000;
 const MY_DOMAIN = 'https://cardapioclick.art';
 
 app.use(cors({
-    origin: [MY_DOMAIN, 'http://localhost:5173', 'http://localhost:3000'],
-    methods: ['GET', 'POST']
+  origin: [MY_DOMAIN, 'http://localhost:5173', 'http://localhost:3000'],
+  methods: ['GET', 'POST']
 }));
 
 app.use(express.json());
@@ -33,7 +33,7 @@ const getMpClient = async (reqToken = null) => {
     try {
       const { data: row } = await supabase.from('usage_data').select('content').eq('id', 1).single();
       if (row?.content?.mpAccessToken) {
-         accessToken = row.content.mpAccessToken;
+        accessToken = row.content.mpAccessToken;
       }
     } catch (e) {
       console.error("Erro ao buscar token MP do banco:", e);
@@ -66,7 +66,7 @@ app.post('/api/create-checkout', async (req, res) => {
     if (!client) return res.status(500).json({ error: 'Mercado Pago não configurado (Access Token ausente).' });
 
     const preference = new Preference(client);
-    
+
     // URL deste Backend para Webhook
     const backendUrl = process.env.WEBHOOK_URL || `${req.protocol}://${req.get('host')}`;
 
@@ -76,7 +76,10 @@ app.post('/api/create-checkout', async (req, res) => {
           {
             id: 'credits-pack',
             title: `Créditos Cardápio Click - ${title}`,
+            description: `Recarga de ${credits || 'créditos'} no sistema`,
+            category_id: 'digital_content',
             quantity: 1,
+            currency_id: 'BRL',
             unit_price: Number(price)
           }
         ],
@@ -90,18 +93,21 @@ app.post('/api/create-checkout', async (req, res) => {
         },
         auto_return: 'approved',
         notification_url: `${backendUrl}/api/webhook`,
+        statement_descriptor: 'CARDAPIO CLICK',
+        external_reference: `credits_${email}_${Date.now()}`,
         metadata: {
           user_email: email,
           credits: credits,
           ts: Date.now()
-        }
+        },
+        purpose: 'wallet_purchase'
       }
     });
 
     if (result.init_point) {
-       res.json({ paymentUrl: result.init_point }); // init_point é a URL do checkout
+      res.json({ paymentUrl: result.init_point }); // init_point é a URL do checkout
     } else {
-       throw new Error('Falha ao gerar URL de pagamento.');
+      throw new Error('Falha ao gerar URL de pagamento.');
     }
 
   } catch (error) {
@@ -113,14 +119,14 @@ app.post('/api/create-checkout', async (req, res) => {
 // --- WEBHOOK MERCADO PAGO ---
 app.post('/api/webhook', async (req, res) => {
   const { query, body } = req;
-  
+
   // O Mercado Pago envia o ID no query (data.id) ou no body dependendo da versão do webhook
   // Geralmente topic=payment ou type=payment
   const topic = query.topic || query.type;
   const id = query.id || query['data.id'] || body?.data?.id;
 
   if (topic === 'payment' && id) {
-     processarPagamentoMP(id);
+    processarPagamentoMP(id);
   }
 
   // Responder rápido para o MP não ficar tentando de novo
@@ -128,55 +134,55 @@ app.post('/api/webhook', async (req, res) => {
 });
 
 async function processarPagamentoMP(paymentId) {
-    try {
-        const client = await getMpClient();
-        if (!client) return;
+  try {
+    const client = await getMpClient();
+    if (!client) return;
 
-        const payment = new Payment(client);
-        const paymentData = await payment.get({ id: paymentId });
-        
-        // Verifica se aprovado
-        if (paymentData.status === 'approved') {
-            const metadata = paymentData.metadata;
-            // O Mercado Pago converte metadata keys para lowercase automaticamente
-            const email = metadata.user_email; 
-            const credits = Number(metadata.credits);
+    const payment = new Payment(client);
+    const paymentData = await payment.get({ id: paymentId });
 
-            console.log(`MP Pago: ${paymentId} | ${email} | +${credits}`);
+    // Verifica se aprovado
+    if (paymentData.status === 'approved') {
+      const metadata = paymentData.metadata;
+      // O Mercado Pago converte metadata keys para lowercase automaticamente
+      const email = metadata.user_email;
+      const credits = Number(metadata.credits);
 
-            if (!email || !credits) return;
+      console.log(`MP Pago: ${paymentId} | ${email} | +${credits}`);
 
-            // Lógica de liberação no Supabase
-            const { data: row } = await supabase.from('usage_data').select('content').eq('id', 1).single();
-            if (!row) return;
+      if (!email || !credits) return;
 
-            let content = row.content;
-            
-            // Idempotência: Evitar creditar duas vezes o mesmo ID
-            if (content.logs.some(l => l.paymentId === String(paymentId))) {
-                console.log('Pagamento duplicado (já processado).');
-                return;
-            }
+      // Lógica de liberação no Supabase
+      const { data: row } = await supabase.from('usage_data').select('content').eq('id', 1).single();
+      if (!row) return;
 
-            const userIndex = content.users.findIndex(u => u.email === email);
-            if (userIndex !== -1) {
-                content.users[userIndex].credits += credits;
-                content.logs.unshift({
-                    timestamp: new Date().toISOString(),
-                    action: `MP: Pagamento Confirmado (+${credits})`,
-                    cost: 0,
-                    userEmail: email,
-                    paymentId: String(paymentId),
-                    isPayment: true
-                });
+      let content = row.content;
 
-                await supabase.from('usage_data').update({ content, updated_at: new Date().toISOString() }).eq('id', 1);
-                console.log('Créditos entregues com sucesso.');
-            }
-        }
-    } catch(e) {
-        console.error("Erro processar webhook MP:", e);
+      // Idempotência: Evitar creditar duas vezes o mesmo ID
+      if (content.logs.some(l => l.paymentId === String(paymentId))) {
+        console.log('Pagamento duplicado (já processado).');
+        return;
+      }
+
+      const userIndex = content.users.findIndex(u => u.email === email);
+      if (userIndex !== -1) {
+        content.users[userIndex].credits += credits;
+        content.logs.unshift({
+          timestamp: new Date().toISOString(),
+          action: `MP: Pagamento Confirmado (+${credits})`,
+          cost: 0,
+          userEmail: email,
+          paymentId: String(paymentId),
+          isPayment: true
+        });
+
+        await supabase.from('usage_data').update({ content, updated_at: new Date().toISOString() }).eq('id', 1);
+        console.log('Créditos entregues com sucesso.');
+      }
     }
+  } catch (e) {
+    console.error("Erro processar webhook MP:", e);
+  }
 }
 
 app.listen(port, () => {
