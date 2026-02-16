@@ -26,18 +26,23 @@ const supabase = createClient(
 
 // --- HELPER PARA CONFIGURAÇÃO DO MERCADO PAGO ---
 const getMpClient = async (reqToken = null) => {
-  let accessToken = reqToken;
+  let accessToken = null;
 
   console.log('🔎 Debug Token MP:');
-  console.log('  - Token do request:', reqToken ? 'SIM (tamanho: ' + reqToken.length + ')' : 'NÃO');
 
-  // Se não veio na requisição, busca do banco (Configuração Global)
-  if (!accessToken) {
+  // PRIORIDADE 1: Variável de ambiente (Render) - sempre completo
+  if (process.env.MP_ACCESS_TOKEN) {
+    accessToken = process.env.MP_ACCESS_TOKEN;
+    console.log('  ✅ Usando token do ENV (tamanho: ' + accessToken.length + ')');
+  }
+
+  // PRIORIDADE 2: Banco de dados (Supabase)
+  else {
     try {
       const { data: row } = await supabase.from('usage_data').select('content').eq('id', 1).single();
       if (row?.content?.mpAccessToken) {
         accessToken = row.content.mpAccessToken;
-        console.log('  - Token do Supabase:', accessToken ? 'SIM (tamanho: ' + accessToken.length + ')' : 'NÃO');
+        console.log('  ✅ Usando token do Supabase (tamanho: ' + accessToken.length + ')');
       } else {
         console.log('  - Token do Supabase: NÃO ENCONTRADO');
       }
@@ -46,10 +51,10 @@ const getMpClient = async (reqToken = null) => {
     }
   }
 
-  // Fallback para ENV
-  if (!accessToken) {
-    accessToken = process.env.MP_ACCESS_TOKEN;
-    console.log('  - Token do ENV:', accessToken ? 'SIM (tamanho: ' + accessToken.length + ')' : 'NÃO');
+  // PRIORIDADE 3: Token do request (pode estar truncado - EVITAR)
+  if (!accessToken && reqToken) {
+    accessToken = reqToken;
+    console.log('  ⚠️  Usando token do request (tamanho: ' + accessToken.length + ') - PODE ESTAR TRUNCADO');
   }
 
   if (!accessToken) {
@@ -57,7 +62,7 @@ const getMpClient = async (reqToken = null) => {
     return null;
   }
 
-  console.log('  ✅ Token final (primeiros 20 chars):', accessToken.substring(0, 20) + '...');
+  console.log('  🎯 Token final:', accessToken.substring(0, 25) + '... (tamanho total: ' + accessToken.length + ')');
   return new MercadoPagoConfig({ accessToken: accessToken });
 };
 
