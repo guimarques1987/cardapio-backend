@@ -28,25 +28,36 @@ const supabase = createClient(
 const getMpClient = async (reqToken = null) => {
   let accessToken = reqToken;
 
+  console.log('🔎 Debug Token MP:');
+  console.log('  - Token do request:', reqToken ? 'SIM (tamanho: ' + reqToken.length + ')' : 'NÃO');
+
   // Se não veio na requisição, busca do banco (Configuração Global)
   if (!accessToken) {
     try {
       const { data: row } = await supabase.from('usage_data').select('content').eq('id', 1).single();
       if (row?.content?.mpAccessToken) {
         accessToken = row.content.mpAccessToken;
+        console.log('  - Token do Supabase:', accessToken ? 'SIM (tamanho: ' + accessToken.length + ')' : 'NÃO');
+      } else {
+        console.log('  - Token do Supabase: NÃO ENCONTRADO');
       }
     } catch (e) {
-      console.error("Erro ao buscar token MP do banco:", e);
+      console.error("  - Erro ao buscar token MP do banco:", e.message);
     }
   }
 
   // Fallback para ENV
   if (!accessToken) {
     accessToken = process.env.MP_ACCESS_TOKEN;
+    console.log('  - Token do ENV:', accessToken ? 'SIM (tamanho: ' + accessToken.length + ')' : 'NÃO');
   }
 
-  if (!accessToken) return null;
+  if (!accessToken) {
+    console.error('  ❌ NENHUM TOKEN ENCONTRADO!');
+    return null;
+  }
 
+  console.log('  ✅ Token final (primeiros 20 chars):', accessToken.substring(0, 20) + '...');
   return new MercadoPagoConfig({ accessToken: accessToken });
 };
 
@@ -99,8 +110,7 @@ app.post('/api/create-checkout', async (req, res) => {
           user_email: email,
           credits: credits,
           ts: Date.now()
-        },
-        purpose: 'wallet_purchase'
+        }
       }
     });
 
